@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "streamlit-sheets-dashboard"
+version = "0.1.0"
+description = "Resource planning dashboard backed by Google Sheets and DuckDB."
+requires-python = ">=3.12"
+dependencies = [
+  "duckdb>=1.2.0",
+  "gspread>=6.1.4",
+  "google-api-python-client>=2.170.0",
+  "google-auth>=2.40.2",
+  "google-auth-oauthlib>=1.2.2",
+  "openpyxl>=3.1.5",
+  "pandas>=2.2.3",
+  "python-dotenv>=1.1.0",
+  "sqlalchemy>=2.0.40",
+  "streamlit>=1.45.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.5",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

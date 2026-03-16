@@ -1,0 +1,19 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:8501}
+      APP_STATE_DIR: /app/app_state
+    volumes:
+      - app_state:/app/app_state
+      - ./data:/app/data:ro
+    restart: unless-stopped
+
+volumes:
+  app_state:
