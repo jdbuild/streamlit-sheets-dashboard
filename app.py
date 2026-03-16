@@ -107,7 +107,7 @@ def _render_startup_diagnostics(user_email: str | None) -> None:
             st.warning("Configuration is incomplete. Finish the action-required items below before the full app flow will work.")
         else:
             st.success("Startup checks are complete.")
-        st.dataframe(pd.DataFrame(checks), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
         if blocked:
             st.markdown(
                 "\n".join(
@@ -156,21 +156,21 @@ def _render_dashboard(sync_service: PlanningSyncService) -> None:
             {"Metric": "Issues", "Value": sync_result.issue_count},
         ]
     )
-    st.dataframe(metrics, hide_index=True, use_container_width=True)
+    st.dataframe(metrics, hide_index=True, width="stretch")
     issues = sync_service.issues()
     if not issues.empty:
         st.error("Analytics are blocked until the inconsistency log is clean.")
         st.subheader("To-Do List")
-        st.data_editor(issues, disabled=True, hide_index=True, use_container_width=True)
+        st.data_editor(issues, disabled=True, hide_index=True, width="stretch")
         return
     st.subheader("Monthly Capacity")
-    st.data_editor(sync_service.analytics_monthly_capacity(), disabled=True, hide_index=True, use_container_width=True)
+    st.data_editor(sync_service.analytics_monthly_capacity(), disabled=True, hide_index=True, width="stretch")
     st.line_chart(sync_service.analytics_monthly_capacity(), x="month_date", y="total_hours", color="userid")
     st.subheader("Budget")
-    st.data_editor(sync_service.analytics_budget(), disabled=True, hide_index=True, use_container_width=True)
+    st.data_editor(sync_service.analytics_budget(), disabled=True, hide_index=True, width="stretch")
     st.bar_chart(sync_service.analytics_budget(), x="month_date", y="budget", color="sheet_title")
     st.subheader("FTE Load")
-    st.data_editor(sync_service.analytics_fte(), disabled=True, hide_index=True, use_container_width=True)
+    st.data_editor(sync_service.analytics_fte(), disabled=True, hide_index=True, width="stretch")
     st.line_chart(sync_service.analytics_fte(), x="month_date", y="fte_load", color="userid")
 
 

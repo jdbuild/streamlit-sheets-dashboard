@@ -1,4 +1,5 @@
 .env
+google-authorized-user.json
 .venv/
 .streamlit/secrets.toml
 data/
