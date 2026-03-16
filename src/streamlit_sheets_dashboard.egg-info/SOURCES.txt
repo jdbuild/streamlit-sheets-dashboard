@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 src/planning/__init__.py
 src/planning/config.py
