@@ -1,5 +1,11 @@
 # Streamlit Sheets Dashboard
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?logo=python&logoColor=white)](./pyproject.toml)
+[![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B.svg?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Google Sheets](https://img.shields.io/badge/Google%20Sheets-API-34A853.svg?logo=googlesheets&logoColor=white)](https://developers.google.com/sheets/api)
+[![DuckDB](https://img.shields.io/badge/DuckDB-Analytics-FECD45.svg)](https://duckdb.org/)
+
 Resource planning web app built with Streamlit, DuckDB, and Google Sheets.
 
 ## What is implemented
@@ -196,3 +202,7 @@ If something is missing, the panel tells you what to do next before the full app
 - DuckDB Python DB-API: https://duckdb.org/docs/stable/clients/python/dbapi.html
 - gspread docs: https://docs.gspread.org/en/latest/
 - python-dotenv: https://pypi.org/project/python-dotenv/
+
+## License
+
+MIT. See [LICENSE](/home/jakob/dev/streamlit-sheets-dashboard/LICENSE).
