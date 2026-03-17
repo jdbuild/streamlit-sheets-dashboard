@@ -27,6 +27,11 @@ SCOPES = [
 class GoogleWorkspaceClient:
     credentials_payload: dict
 
+    @classmethod
+    def from_authorized_user_file(cls, path: str | Path) -> "GoogleWorkspaceClient":
+        credentials_path = Path(path)
+        return cls(json.loads(credentials_path.read_text()))
+
     def _credentials(self) -> Credentials:
         creds = Credentials.from_authorized_user_info(self.credentials_payload, scopes=SCOPES)
         if creds.expired and creds.refresh_token:

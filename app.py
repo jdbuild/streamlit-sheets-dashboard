@@ -6,11 +6,8 @@ import streamlit as st
 from planning.config import get_config
 from planning.google_workspace import GoogleWorkspaceClient
 from planning.metadata_store import MetadataStore
-from planning.oauth import build_google_oauth_start, exchange_google_oauth_code
 from planning.sync_service import PlanningSyncService
 from planning.ui import (
-    render_google_oauth_needed,
-    render_login_state,
     render_project_creation,
     render_workspace_setup_needed,
     workspace_title_for_user,
@@ -21,6 +18,7 @@ st.set_page_config(page_title="Resource Planning", layout="wide")
 
 config = get_config()
 metadata_store = MetadataStore(config.sqlite_path)
+LOCAL_USER_EMAIL = "local-user@localhost"
 
 
 @st.cache_resource
@@ -28,35 +26,18 @@ def metadata_connection(sqlite_url: str):
     return st.connection("metadata_db", type="sql", url=sqlite_url)
 
 
-def _session_email() -> str | None:
-    user = getattr(st, "user", None)
-    if user is None or not getattr(user, "is_logged_in", False):
+def _session_email() -> str:
+    return LOCAL_USER_EMAIL
+
+
+def _get_google_client() -> GoogleWorkspaceClient | None:
+    credentials_path = config.google_authorized_user_path
+    if not credentials_path.is_file():
         return None
-    return user.email
+    return GoogleWorkspaceClient.from_authorized_user_file(credentials_path)
 
 
-def _read_google_oauth_callback() -> bool:
-    query_params = st.query_params
-    code = query_params.get("code")
-    state = query_params.get("state")
-    stored_state = st.session_state.get("google_oauth_state")
-    if not code or not state or stored_state != state:
-        return False
-    credentials_payload = exchange_google_oauth_code(config, state=state, code=code)
-    metadata_store.store_google_credentials(_session_email(), credentials_payload)
-    st.query_params.clear()
-    st.session_state.pop("google_oauth_state", None)
-    return True
-
-
-def _get_google_client(user_email: str) -> GoogleWorkspaceClient | None:
-    credentials_payload = metadata_store.get_google_credentials(user_email)
-    if not credentials_payload:
-        return None
-    return GoogleWorkspaceClient(credentials_payload)
-
-
-def _startup_checks(user_email: str | None) -> list[dict[str, str]]:
+def _startup_checks(user_email: str) -> list[dict[str, str]]:
     checks: list[dict[str, str]] = []
     missing_env = config.missing_env_items()
     checks.append(
@@ -70,36 +51,35 @@ def _startup_checks(user_email: str | None) -> list[dict[str, str]]:
     )
     checks.append(
         {
-            "Check": "Streamlit login",
-            "Status": "ok" if user_email else "action_required",
-            "Details": "App login is active." if user_email else "Sign in through the Streamlit OIDC provider.",
+            "Check": "App mode",
+            "Status": "ok",
+            "Details": f"Single-user local mode is active as `{user_email}`.",
         }
     )
-    if user_email:
-        has_google_credentials = metadata_store.get_google_credentials(user_email) is not None
-        checks.append(
-            {
-                "Check": "Google Workspace access",
-                "Status": "ok" if has_google_credentials else "action_required",
-                "Details": "Google OAuth token is stored."
-                if has_google_credentials
-                else "Connect Google Workspace to authorize Sheets and Drive access.",
-            }
-        )
-        workspace = metadata_store.get_workspace(user_email)
-        checks.append(
-            {
-                "Check": "Workspace assignment",
-                "Status": "ok" if workspace else "action_required",
-                "Details": f"Workspace configured: {workspace.google_sheet_id}"
-                if workspace
-                else "Use 'Workspace einrichten' after Google access is connected.",
-            }
-        )
+    has_google_credentials = config.google_authorized_user_path.is_file()
+    checks.append(
+        {
+            "Check": "Google Workspace access",
+            "Status": "ok" if has_google_credentials else "action_required",
+            "Details": f"Authorized-user credentials found at `{config.google_authorized_user_path}`."
+            if has_google_credentials
+            else f"Add a Google authorized-user JSON file at `{config.google_authorized_user_path}`.",
+        }
+    )
+    workspace = metadata_store.get_workspace(user_email)
+    checks.append(
+        {
+            "Check": "Workspace assignment",
+            "Status": "ok" if workspace else "action_required",
+            "Details": f"Workspace configured: {workspace.google_sheet_id}"
+            if workspace
+            else "Use 'Workspace einrichten' to create the local workspace copy.",
+        }
+    )
     return checks
 
 
-def _render_startup_diagnostics(user_email: str | None) -> None:
+def _render_startup_diagnostics(user_email: str) -> None:
     checks = _startup_checks(user_email)
     blocked = [item for item in checks if item["Status"] != "ok"]
     with st.expander("Startup Diagnostics", expanded=bool(blocked)):
@@ -113,8 +93,7 @@ def _render_startup_diagnostics(user_email: str | None) -> None:
                 "\n".join(
                     [
                         "- Set required values in `.env` and restart the app.",
-                        "- Configure Streamlit OIDC for `st.login`.",
-                        "- Connect Google Workspace after signing in.",
+                        "- Keep `google-authorized-user.json` in the repo root or set `GOOGLE_AUTHORIZED_USER_PATH`.",
                         "- Run the migration script once and set `CANONICAL_TEMPLATE_SHEET_ID`.",
                     ]
                 )
@@ -178,19 +157,12 @@ def main() -> None:
     metadata_connection(config.sqlite_url)
     user_email = _session_email()
     _render_startup_diagnostics(user_email)
-    if user_email is None:
-        render_login_state()
-        return
-    if _read_google_oauth_callback():
-        st.rerun()
-    google_client = _get_google_client(user_email)
+    google_client = _get_google_client()
     if google_client is None:
-        if config.missing_env_items():
-            st.error("Google OAuth is not ready because required .env values are missing or still set to placeholders.")
-        else:
-            oauth_start = build_google_oauth_start(config)
-            st.session_state["google_oauth_state"] = oauth_start.state
-            render_google_oauth_needed(oauth_start.authorization_url)
+        st.error(
+            "Google access is not ready because the authorized-user JSON file is missing. "
+            "Place it at `google-authorized-user.json` or set `GOOGLE_AUTHORIZED_USER_PATH`."
+        )
         return
     workspace = metadata_store.get_workspace(user_email)
     if workspace is None:

@@ -5,18 +5,6 @@ import streamlit as st
 from planning.google_workspace import build_workspace_title, slugify_project_name
 
 
-def render_login_state() -> None:
-    st.title("Resource Planning")
-    st.write("Please sign in with your configured OIDC provider.")
-    st.button("Sign in", on_click=st.login)
-
-
-def render_google_oauth_needed(auth_url: str) -> None:
-    st.title("Connect Google Workspace")
-    st.write("Authorize Google Sheets and Drive access to enable workspace sync.")
-    st.link_button("Connect Google Workspace", auth_url)
-
-
 def render_workspace_setup_needed(user_email: str) -> bool:
     st.title("Workspace Setup")
     st.write(f"No workspace found for `{user_email}`.")

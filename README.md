@@ -6,11 +6,11 @@
 [![Google Sheets](https://img.shields.io/badge/Google%20Sheets-API-34A853.svg?logo=googlesheets&logoColor=white)](https://developers.google.com/sheets/api)
 [![DuckDB](https://img.shields.io/badge/DuckDB-Analytics-FECD45.svg)](https://duckdb.org/)
 
-Resource planning web app built with Streamlit, DuckDB, and Google Sheets.
+Resource planning web app built with Streamlit, DuckDB, and Google Sheets for a single local user.
 
 ## What is implemented
 
-- Streamlit app shell with login, Google OAuth handoff, workspace bootstrap, sync trigger, and blocked analytics state
+- Streamlit app shell with local single-user Google credentials, workspace bootstrap, sync trigger, and blocked analytics state
 - Startup diagnostics panel that shows missing configuration and the next required steps
 - XLSM parser for `data/sandbox.xlsm`
 - In-memory DuckDB sync pipeline with dimensions, fact table, and `inconsistency_log`
@@ -62,7 +62,7 @@ The container exposes:
 
 - `http://localhost:8501`
 
-Persistent app metadata and stored Google OAuth tokens are written to the named Docker volume:
+Persistent app metadata is written to the named Docker volume:
 
 - `app_state`
 
@@ -80,9 +80,7 @@ Set these values in `.env`:
 APP_URL=http://localhost:8501
 APP_STATE_DIR=app_state
 CANONICAL_TEMPLATE_SHEET_ID=
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_PROJECT_ID=
+GOOGLE_AUTHORIZED_USER_PATH=google-authorized-user.json
 ```
 
 When running in Docker, keep:
@@ -90,6 +88,14 @@ When running in Docker, keep:
 ```env
 APP_URL=http://localhost:8501
 ```
+
+Place the authorized-user JSON used by the migration script at the repo root as:
+
+- `google-authorized-user.json`
+
+Or point to it explicitly with:
+
+- `GOOGLE_AUTHORIZED_USER_PATH=/absolute/path/to/google-authorized-user.json`
 
 The app ignores:
 
@@ -99,35 +105,12 @@ The app ignores:
 
 ## Google setup
 
-Two separate auth layers are assumed:
+This project now runs in single-user local mode. The app and the migration script both use the same Google authorized-user credentials JSON.
 
-1. Streamlit OIDC for app login via `st.login`
-2. Google OAuth for Sheets and Drive access
+Required:
 
-### 1. Streamlit login
-
-Configure your Streamlit auth settings according to the current `st.login` documentation:
-
-- https://docs.streamlit.io/develop/api-reference/user/st.login
-
-For local development, the redirect base should match:
-
-- `APP_URL=http://localhost:8501`
-
-### 2. Google OAuth client
-
-Create a Google OAuth client in Google Cloud Console and allow at least these scopes:
-
-- `openid`
-- `https://www.googleapis.com/auth/userinfo.email`
-- `https://www.googleapis.com/auth/spreadsheets`
-- `https://www.googleapis.com/auth/drive`
-
-Use the redirect URI:
-
-- `http://localhost:8501/`
-
-Then place the client ID and secret in `.env`.
+- a Google authorized-user JSON file with Sheets and Drive access
+- the file available at `google-authorized-user.json` or via `GOOGLE_AUTHORIZED_USER_PATH`
 
 ## Canonical template migration
 
@@ -155,11 +138,10 @@ If you run the migration from inside Docker later, mount the credentials file in
 ## First run flow
 
 1. Start the app with `./run.sh`
-2. Log into the app through Streamlit OIDC
-3. Authorize Google Sheets / Drive access
-4. Click `Workspace einrichten`
-5. The app copies the canonical spreadsheet into the user account
-6. Click `Sync from Google Sheets`
+2. Open the app at `http://localhost:8501`
+3. Click `Workspace einrichten`
+4. The app copies the canonical spreadsheet into your Google account
+5. Click `Sync from Google Sheets`
 
 For Docker, replace step 1 with:
 
@@ -172,9 +154,8 @@ On every app start, open the `Startup Diagnostics` panel near the top of the pag
 It checks:
 
 - whether required `.env` values are missing or still placeholders
-- whether Streamlit login is active
-- whether Google Workspace access has been connected
-- whether a workspace has already been assigned to the signed-in user
+- whether the authorized-user JSON is available
+- whether a workspace has already been created for local use
 
 If something is missing, the panel tells you what to do next before the full app flow will work.
 
@@ -184,7 +165,7 @@ If something is missing, the panel tells you what to do next before the full app
 - `st.data_editor` is used read-only for review and analytics tables
 - Analytics stay blocked while `inconsistency_log` contains errors
 - Some real project sheets use month headers in row `19`, others in row `4`; the parser handles both
-- Docker runtime is prepared for the app itself, but Google OAuth / Streamlit OIDC provider configuration must still be valid for `http://localhost:8501`
+- Docker runtime is prepared for the app itself, but the authorized-user JSON must still be mounted or made available inside the container
 
 ## Data model notes
 
@@ -195,7 +176,6 @@ If something is missing, the panel tells you what to do next before the full app
 
 ## References
 
-- Streamlit `st.login`: https://docs.streamlit.io/develop/api-reference/user/st.login
 - Streamlit `st.connection`: https://docs.streamlit.io/develop/api-reference/connections/st.connection
 - Streamlit `st.data_editor`: https://docs.streamlit.io/develop/api-reference/data/st.data_editor
 - DuckDB `httpfs`: https://duckdb.org/docs/stable/core_extensions/httpfs/overview.html

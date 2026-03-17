@@ -3,11 +3,11 @@ Name: streamlit-sheets-dashboard
 Version: 0.1.0
 Summary: Resource planning dashboard backed by Google Sheets and DuckDB.
 Requires-Python: >=3.12
+License-File: LICENSE
 Requires-Dist: duckdb>=1.2.0
 Requires-Dist: gspread>=6.1.4
 Requires-Dist: google-api-python-client>=2.170.0
 Requires-Dist: google-auth>=2.40.2
-Requires-Dist: google-auth-oauthlib>=1.2.2
 Requires-Dist: openpyxl>=3.1.5
 Requires-Dist: pandas>=2.2.3
 Requires-Dist: python-dotenv>=1.1.0
@@ -15,3 +15,4 @@ Requires-Dist: sqlalchemy>=2.0.40
 Requires-Dist: streamlit>=1.45.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.3.5; extra == "dev"
+Dynamic: license-file

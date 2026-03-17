@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 src/planning/__init__.py
@@ -5,7 +6,6 @@ src/planning/config.py
 src/planning/google_workspace.py
 src/planning/metadata_store.py
 src/planning/models.py
-src/planning/oauth.py
 src/planning/sync_service.py
 src/planning/ui.py
 src/planning/xlsm_parser.py
@@ -14,5 +14,6 @@ src/streamlit_sheets_dashboard.egg-info/SOURCES.txt
 src/streamlit_sheets_dashboard.egg-info/dependency_links.txt
 src/streamlit_sheets_dashboard.egg-info/requires.txt
 src/streamlit_sheets_dashboard.egg-info/top_level.txt
+tests/test_migrate_to_gsheets.py
 tests/test_sync_service.py
 tests/test_xlsm_parser.py
