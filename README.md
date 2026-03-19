@@ -10,7 +10,7 @@ Resource planning web app built with Streamlit, DuckDB, and Google Sheets for a 
 
 ## What is implemented
 
-- Streamlit app shell with local single-user Google credentials, workspace bootstrap, sync trigger, and blocked analytics state
+- Streamlit app shell with local single-user Google credentials, direct canonical-sheet sync, and blocked analytics state
 - Startup diagnostics panel that shows missing configuration and the next required steps
 - XLSM parser for `data/sandbox.xlsm`
 - In-memory DuckDB sync pipeline with dimensions, fact table, and `inconsistency_log`
@@ -114,7 +114,7 @@ Required:
 
 ## Canonical template migration
 
-Before workspace onboarding can work, create the canonical Google Spreadsheet template once from the local XLSM file.
+Before the app can run, create the canonical Google Spreadsheet once from the local XLSM file.
 
 The migration script is:
 
@@ -133,15 +133,16 @@ The script prints the new spreadsheet ID. Put that value into:
 
 - `CANONICAL_TEMPLATE_SHEET_ID`
 
+The app uses that spreadsheet directly for sync and project creation. It does not create a separate workspace copy.
+
 If you run the migration from inside Docker later, mount the credentials file into the container first. For now, the simplest path is to run the migration on the host.
 
 ## First run flow
 
 1. Start the app with `./run.sh`
 2. Open the app at `http://localhost:8501`
-3. Click `Workspace einrichten`
-4. The app copies the canonical spreadsheet into your Google account
-5. Click `Sync from Google Sheets`
+3. Click `Sync from Google Sheets`
+4. Use `+ Create project` to duplicate `P-XYTemplate` inside that spreadsheet
 
 For Docker, replace step 1 with:
 
@@ -155,7 +156,7 @@ It checks:
 
 - whether required `.env` values are missing or still placeholders
 - whether the authorized-user JSON is available
-- whether a workspace has already been created for local use
+- whether the canonical spreadsheet ID is configured
 
 If something is missing, the panel tells you what to do next before the full app flow will work.
 
@@ -170,9 +171,49 @@ If something is missing, the panel tells you what to do next before the full app
 ## Data model notes
 
 - Source workbook field `fhId` is normalized to `userid`
-- `P-XYTemplate` is used for duplication and workspace bootstrap only
-- Only the block start rows `20, 35, ..., 170` are transformed into planning facts
-- Monthly planning cells are read from `T:CM`
+- `P-XYTemplate` is used for duplication inside the canonical spreadsheet
+- Person blocks start at rows `20, 31, 42, ...` with block height `11`
+- The block userid is read from `B{block_start + 1}`
+- The 8 WP rows in each person block are the fact source for `project + person + wp + month`
+- The summary row at `block_start + 8` is used to validate the summed WP rows for that person block
+- Monthly planning cells are read from `T:CM`; empty cells stay empty
+
+## ERD
+
+The intended analytical grain is:
+
+- one fact row per `project + person + wp + month`
+
+Logical ERD:
+
+```text
+Project (1) ----< PlanningFact >---- (1) Person
+                     |
+                     v
+                    WP
+                     |
+                     v
+                   Month
+```
+
+Entity summary:
+
+- `Project`
+  - source: one Google Sheet tab per project such as `P-CT-Extention`
+- `Person`
+  - source: person block metadata including `person_slot`, display name, and `userid`
+- `WP`
+  - source: WP labels in the project block and the WP dimension table in `A210:C218`
+- `Month`
+  - source: month headers in `T:CM`
+- `PlanningFact`
+  - source: the 8 WP rows inside each person block
+  - grain: monthly hours for one person on one WP in one project
+
+Validation rule:
+
+- the person summary row at `block_start + 8` is not the fact source
+- it is used to validate that the sum of the 8 WP rows matches the expected per-person monthly total
 
 ## References
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from math import isclose
 from uuid import uuid4
 import re
 
@@ -67,11 +68,14 @@ class PlanningSyncService:
         self._load_table("inconsistency_log", issues_df)
         self._run_post_load_checks(run_id)
         issue_count = int(self.connection.execute("SELECT COUNT(*) FROM inconsistency_log").fetchone()[0])
+        error_count = int(
+            self.connection.execute("SELECT COUNT(*) FROM inconsistency_log WHERE severity = 'error'").fetchone()[0]
+        )
         fact_count = int(self.connection.execute("SELECT COUNT(*) FROM fact_planning").fetchone()[0])
         project_count = len(dim_projects_df.index)
         return SyncResult(
             run_id=run_id,
-            status="clean" if issue_count == 0 else "blocked",
+            status="clean" if error_count == 0 else "blocked",
             issue_count=issue_count,
             project_count=project_count,
             fact_row_count=fact_count,
@@ -82,8 +86,24 @@ class PlanningSyncService:
             """
             SELECT month_date, userid, SUM(COALESCE(hours, 0)) AS total_hours
             FROM fact_planning
+            WHERE userid IS NOT NULL
             GROUP BY month_date, userid
             ORDER BY month_date, userid
+            """
+        ).fetchdf()
+
+    def analytics_monthly_capacity_detail(self) -> pd.DataFrame:
+        return self.connection.execute(
+            """
+            SELECT
+                month_date,
+                userid,
+                sheet_title,
+                SUM(COALESCE(hours, 0)) AS total_hours
+            FROM fact_planning
+            WHERE userid IS NOT NULL
+            GROUP BY month_date, userid, sheet_title
+            ORDER BY userid, sheet_title, month_date
             """
         ).fetchdf()
 
@@ -101,6 +121,22 @@ class PlanningSyncService:
             """
         ).fetchdf()
 
+    def analytics_budget_detail(self) -> pd.DataFrame:
+        return self.connection.execute(
+            """
+            SELECT
+                fp.sheet_title,
+                fp.month_date,
+                fp.userid,
+                SUM(COALESCE(fp.hours, 0) * COALESCE(du.hourly_rate_overhead, du.hourly_rate, 0)) AS budget
+            FROM fact_planning fp
+            LEFT JOIN dim_users du ON fp.userid = du.userid
+            WHERE fp.userid IS NOT NULL
+            GROUP BY fp.sheet_title, fp.month_date, fp.userid
+            ORDER BY fp.sheet_title, fp.month_date, fp.userid
+            """
+        ).fetchdf()
+
     def analytics_fte(self) -> pd.DataFrame:
         return self.connection.execute(
             f"""
@@ -109,6 +145,7 @@ class PlanningSyncService:
                 userid,
                 SUM(COALESCE(hours, 0)) / {GLOBAL_MONTHLY_HOURS_CAP} AS fte_load
             FROM fact_planning
+            WHERE userid IS NOT NULL
             GROUP BY month_date, userid
             ORDER BY month_date, userid
             """
@@ -116,6 +153,17 @@ class PlanningSyncService:
 
     def issues(self) -> pd.DataFrame:
         return self.connection.execute("SELECT * FROM inconsistency_log ORDER BY severity, sheet_title, cell_ref").fetchdf()
+
+    def people(self) -> pd.DataFrame:
+        return self.connection.execute(
+            """
+            SELECT userid, MAX(person_name) AS person_name
+            FROM fact_planning
+            WHERE userid IS NOT NULL
+            GROUP BY userid
+            ORDER BY userid
+            """
+        ).fetchdf()
 
     def _build_fact_rows(
         self,
@@ -131,42 +179,29 @@ class PlanningSyncService:
         fact_rows: list[dict] = []
         issue_rows: list[dict] = []
         for block in blocks:
-            userid = None
+            userid = block.userid
             person_slot = block.person_slot
-            if person_slot and person_slot in users_by_slot:
+            if userid is None and person_slot and person_slot in users_by_slot:
                 userid = users_by_slot[person_slot]["userid"]
-            else:
+            elif userid is None and person_slot is None and block.person_name:
+                userid = block.person_name
+            elif userid is None and person_slot:
                 issue_rows.append(
                     self._issue(
                         run_id,
                         "UNKNOWN_USERID",
                         "error",
                         block.sheet_title,
-                        f"A{block.source_row}",
+                        f"B{block.source_row + 1}",
                         None,
                         person_slot,
                         None,
                         None,
-                        "Unable to resolve userid from person_slot.",
+                        "Unable to resolve userid from block userid or person_slot.",
                     )
                 )
             wp_code, wp_shortname = _parse_wp_label(block.wp_label_raw)
-            if wp_code is None:
-                issue_rows.append(
-                    self._issue(
-                        run_id,
-                        "WP_LABEL_PARSE_ERROR",
-                        "error",
-                        block.sheet_title,
-                        f"E{block.source_row}",
-                        userid,
-                        person_slot,
-                        None,
-                        None,
-                        "Missing WP label.",
-                    )
-                )
-            elif wp_code not in wp_codes:
+            if wp_code is not None and wp_code not in wp_codes:
                 issue_rows.append(
                     self._issue(
                         run_id,
@@ -200,7 +235,39 @@ class PlanningSyncService:
                         "load_run_id": run_id,
                     }
                 )
+        issue_rows.extend(self._summary_validation_issues(blocks, run_id))
         return pd.DataFrame(fact_rows), pd.DataFrame(issue_rows)
+
+    def _summary_validation_issues(self, blocks: list[ParsedProjectBlock], run_id: str) -> list[dict]:
+        issues: list[dict] = []
+        grouped: dict[tuple[str, int], list[ParsedProjectBlock]] = {}
+        for block in blocks:
+            grouped.setdefault((block.sheet_title, block.block_start_row), []).append(block)
+        for (sheet_title, block_start_row), group in grouped.items():
+            wp_totals: dict[object, float] = {}
+            for block in group:
+                for month_date, _, hours in block.monthly_values:
+                    wp_totals[month_date] = wp_totals.get(month_date, 0.0) + float(hours or 0.0)
+            summary_values = {month_date: float(hours or 0.0) for month_date, _, hours in group[0].summary_monthly_values}
+            for month_date, summary_total in summary_values.items():
+                wp_total = wp_totals.get(month_date, 0.0)
+                if isclose(wp_total, summary_total, abs_tol=1e-6):
+                    continue
+                issues.append(
+                    self._issue(
+                        run_id,
+                        "PERSON_SUMMARY_MISMATCH",
+                        "warning",
+                        sheet_title,
+                        f"T{block_start_row + 8}",
+                        group[0].userid,
+                        group[0].person_slot,
+                        None,
+                        month_date,
+                        f"WP row sum {wp_total:.2f}h does not match summary row {summary_total:.2f}h.",
+                    )
+                )
+        return issues
 
     def _issue(
         self,
@@ -343,14 +410,16 @@ class PlanningSyncService:
             SELECT
                 '{run_id}' AS load_run_id,
                 'GLOBAL_MONTH_CAP_EXCEEDED' AS error_code,
-                'error' AS severity,
+                'warning' AS severity,
                 NULL AS sheet_title,
                 NULL AS cell_ref,
                 userid,
                 NULL AS person_slot,
                 NULL AS wp_code,
                 month_date,
-                'Monthly hour cap exceeded.' AS message
+                'Monthly hour cap exceeded: '
+                    || CAST(ROUND(SUM(COALESCE(hours, 0)), 2) AS VARCHAR)
+                    || 'h total across all sheets.' AS message
             FROM fact_planning
             WHERE userid IS NOT NULL
             GROUP BY userid, month_date

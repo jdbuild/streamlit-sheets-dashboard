@@ -2,13 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from planning.google_workspace import build_workspace_title, slugify_project_name
-
-
-def render_workspace_setup_needed(user_email: str) -> bool:
-    st.title("Workspace Setup")
-    st.write(f"No workspace found for `{user_email}`.")
-    return st.button("Workspace einrichten", type="primary")
+from planning.google_workspace import slugify_project_name
 
 
 def render_project_creation() -> str | None:
@@ -18,7 +12,3 @@ def render_project_creation() -> str | None:
     if submitted and project_name.strip():
         return f"P-{slugify_project_name(project_name)}"
     return None
-
-
-def workspace_title_for_user(user_email: str) -> str:
-    return build_workspace_title(user_email)

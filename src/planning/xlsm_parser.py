@@ -13,6 +13,7 @@ from planning.models import (
     MONTH_END_COL,
     MONTH_HEADER_ROW,
     MONTH_START_COL,
+    PERSON_BLOCK_HEIGHT,
     TEMPLATE_SHEET,
     USER_RANGE,
     WP_RANGE,
@@ -24,14 +25,17 @@ from planning.models import (
 @dataclass(slots=True)
 class ParsedProjectBlock:
     sheet_title: str
+    block_start_row: int
     source_row: int
     person_slot: str | None
+    userid: str | None
     person_name: str | None
     role: str | None
     optional_attr: str | None
     wp_label_raw: str | None
     annual_summary: dict[str, float | None]
     monthly_values: list[tuple[date, str, float | None]]
+    summary_monthly_values: list[tuple[date, str, float | None]]
 
 
 @dataclass(slots=True)
@@ -75,7 +79,10 @@ def parse_local_xlsm(path: str | Path) -> ParsedWorkbook:
 
 
 def parse_openpyxl_workbook(workbook) -> ParsedWorkbook:
+    allowed_project_sheets = _budget_project_sheet_names(workbook)
     project_sheet_names = [ws.title for ws in workbook.worksheets if ws.title.startswith("P-")]
+    if allowed_project_sheets:
+        project_sheet_names = [sheet_name for sheet_name in project_sheet_names if sheet_name in allowed_project_sheets]
     dimension_sheet = workbook[TEMPLATE_SHEET] if TEMPLATE_SHEET in workbook.sheetnames else workbook[project_sheet_names[0]]
     users = parse_user_dimensions(dimension_sheet)
     wps = parse_wp_dimensions(dimension_sheet)
@@ -90,6 +97,19 @@ def parse_openpyxl_workbook(workbook) -> ParsedWorkbook:
         wp_dimensions=wps,
         project_blocks=project_blocks,
     )
+
+
+def _budget_project_sheet_names(workbook) -> set[str]:
+    if "BUDGET" not in workbook.sheetnames:
+        return set()
+    sheet = workbook["BUDGET"]
+    project_names: set[str] = set()
+    for row in range(10, 61):
+        for col in ("B", "C", "D", "E"):
+            value = sheet[f"{col}{row}"].value
+            if isinstance(value, str) and value.strip().startswith("P-"):
+                project_names.add(value.strip())
+    return project_names
 
 
 def parse_user_dimensions(sheet) -> list[UserDimensionRow]:
@@ -151,37 +171,53 @@ def parse_project_sheet(sheet) -> list[ParsedProjectBlock]:
         for col_idx in _iter_month_columns()
     }
     blocks: list[ParsedProjectBlock] = []
-    for row_idx in BLOCK_START_ROWS:
-        person_slot = sheet[f"A{row_idx}"].value
-        person_name = sheet[f"B{row_idx}"].value
-        role = sheet[f"C{row_idx}"].value
-        optional_attr = sheet[f"D{row_idx}"].value
-        wp_label_raw = sheet[f"E{row_idx}"].value
-        monthly_values = []
-        has_month_values = False
+    for block_start in BLOCK_START_ROWS:
+        person_slot = sheet[f"A{block_start}"].value
+        person_name = sheet[f"B{block_start}"].value
+        userid = sheet[f"B{block_start + 1}"].value
+        role = sheet[f"C{block_start}"].value
+        optional_attr = sheet[f"D{block_start}"].value
+        summary_row = block_start + 8
+        annual_summary = {
+            f"annual_summary_{offset}": _to_float(sheet.cell(row=block_start, column=col_idx).value)
+            for offset, col_idx in enumerate(range(column_index_from_string("F"), column_index_from_string("J") + 1), start=1)
+        }
+        summary_monthly_values = []
+        has_summary_values = False
         for col_idx in _iter_month_columns():
-            cell = sheet.cell(row=row_idx, column=col_idx)
+            cell = sheet.cell(row=summary_row, column=col_idx)
             value = _to_float(cell.value) if cell.value not in ("", None) else None
-            has_month_values = has_month_values or value is not None
-            monthly_values.append((month_headers[col_idx], cell.coordinate, value))
-        if all(value in (None, "") for value in [person_slot, person_name, role, optional_attr, wp_label_raw]) and not has_month_values:
+            has_summary_values = has_summary_values or value is not None
+            summary_monthly_values.append((month_headers[col_idx], cell.coordinate, value))
+        if person_slot in (None, "") and userid in (None, "") and not has_summary_values:
             continue
-        blocks.append(
-            ParsedProjectBlock(
-                sheet_title=sheet.title,
-                source_row=row_idx,
-                person_slot=str(person_slot).strip() if person_slot not in (None, "") else None,
-                person_name=str(person_name).strip() if person_name not in (None, "") else None,
-                role=str(role).strip() if role not in (None, "") else None,
-                optional_attr=str(optional_attr).strip() if optional_attr not in (None, "") else None,
-                wp_label_raw=str(wp_label_raw).strip() if wp_label_raw not in (None, "") else None,
-                annual_summary={
-                    f"annual_summary_{offset}": _to_float(sheet.cell(row=row_idx, column=col_idx).value)
-                    for offset, col_idx in enumerate(range(column_index_from_string("F"), column_index_from_string("J") + 1), start=1)
-                },
-                monthly_values=monthly_values,
+        for row_idx in range(block_start, block_start + 8):
+            wp_label_raw = sheet[f"E{row_idx}"].value
+            monthly_values = []
+            has_month_values = False
+            for col_idx in _iter_month_columns():
+                cell = sheet.cell(row=row_idx, column=col_idx)
+                value = _to_float(cell.value) if cell.value not in ("", None) else None
+                has_month_values = has_month_values or value is not None
+                monthly_values.append((month_headers[col_idx], cell.coordinate, value))
+            if wp_label_raw in (None, "") and not has_month_values:
+                continue
+            blocks.append(
+                ParsedProjectBlock(
+                    sheet_title=sheet.title,
+                    block_start_row=block_start,
+                    source_row=row_idx,
+                    person_slot=str(person_slot).strip() if person_slot not in (None, "") else None,
+                    userid=str(userid).strip() if userid not in (None, "") else None,
+                    person_name=str(person_name).strip() if person_name not in (None, "") else None,
+                    role=str(role).strip() if role not in (None, "") else None,
+                    optional_attr=str(optional_attr).strip() if optional_attr not in (None, "") else None,
+                    wp_label_raw=str(wp_label_raw).strip() if wp_label_raw not in (None, "") else None,
+                    annual_summary=annual_summary,
+                    monthly_values=monthly_values,
+                    summary_monthly_values=summary_monthly_values,
+                )
             )
-        )
     return blocks
 
 

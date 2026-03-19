@@ -16,8 +16,6 @@ from planning.models import TEMPLATE_SHEET
 
 
 SCOPES = [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
@@ -88,12 +86,5 @@ class GoogleWorkspaceClient:
 def slugify_project_name(name: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9]+", "-", name.strip())
     return cleaned.strip("-") or "new-project"
-
-
-def build_workspace_title(user_email: str) -> str:
-    local = user_email.split("@", 1)[0]
-    return f"Planning Workspace - {local}"
-
-
 def load_workbook_from_local_file(path: str | Path):
     return load_workbook(Path(path), data_only=False, keep_vba=True)
