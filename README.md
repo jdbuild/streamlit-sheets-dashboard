@@ -1,4 +1,4 @@
-# Streamlit Sheets Dashboard
+# Streamlit Sheets Dashboards
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?logo=python&logoColor=white)](./pyproject.toml)
